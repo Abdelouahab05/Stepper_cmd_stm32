@@ -25,6 +25,12 @@ typedef struct {
     uint32_t target_delay;
     uint32_t init_steps;
 
+    GPIO_TypeDef *trig_port;
+    uint16_t trig_pin;
+    GPIO_TypeDef *echo_port;
+    uint16_t echo_pin;
+
+
 }stepper;
 
 typedef struct {
@@ -35,6 +41,8 @@ typedef struct {
     stepper *left;
     stepper *right;
 } robot;
+
+void computeNewSpeed(stepper *s);
 
 uint32_t speed_to_delay_us(float speed_rad_s);
 
@@ -50,5 +58,9 @@ void isr_stepper(stepper *s);
 void move_two_steppers(stepper *s1, stepper *s2, uint32_t steps, GPIO_PinState direction );
 
 void robot_rotate(robot *r, float angle_deg, uint32_t cw);   // 1 = CW, 0 = CCW
+
+void sensor_control_loop(stepper *s);
+
+void isr_ultrasonic(TIM_HandleTypeDef *htim);
 
 #endif
