@@ -318,3 +318,78 @@ void isr_ultrasonic(TIM_HandleTypeDef *htim){
 
 }
 
+// Trajectory definitions =================================================================================================
+
+// Trajectory 0 - reconstructed from your original main.c (turn_right = CW first)
+static const robot_move_t traj0_moves[] = {
+    { MOVE_FORWARD,  0.40f },
+    { MOVE_TURN_CW,  75.0f },
+    { MOVE_FORWARD,  0.70f },
+    { MOVE_TURN_CCW, 75.0f },
+    { MOVE_FORWARD,  0.33f },
+};
+
+// Trajectory 1 - fill with your real leg distances / turn angles
+static const robot_move_t traj1_moves[] = {
+    { MOVE_FORWARD,  0.0f },
+    { MOVE_TURN_CCW, 0.0f },
+    { MOVE_FORWARD,  0.0f },
+};
+
+// Trajectory 2 - fill in
+static const robot_move_t traj2_moves[] = {
+    { MOVE_FORWARD,  0.0f },
+    { MOVE_TURN_CW,  0.0f },
+    { MOVE_FORWARD,  0.0f },
+};
+
+// Trajectory 3 - fill in
+static const robot_move_t traj3_moves[] = {
+    { MOVE_FORWARD,  0.0f },
+    { MOVE_TURN_CCW, 0.0f },
+    { MOVE_FORWARD,  0.0f },
+};
+
+const trajectory_t trajectories[NUM_TRAJECTORIES] = {
+    { traj0_moves, sizeof(traj0_moves)/sizeof(traj0_moves[0]) },
+    { traj1_moves, sizeof(traj1_moves)/sizeof(traj1_moves[0]) },
+    { traj2_moves, sizeof(traj2_moves)/sizeof(traj2_moves[0]) },
+    { traj3_moves, sizeof(traj3_moves)/sizeof(traj3_moves[0]) },
+};
+
+void robot_execute_trajectory(robot *r, const trajectory_t *traj)
+{
+    for (uint8_t i = 0; i < traj->num_moves; i++)
+    {
+        const robot_move_t *m = &traj->moves[i];
+
+        switch (m->type)
+        {
+            case MOVE_FORWARD:
+            {
+                uint32_t steps = distance_to_steps(m->value, r->wheel_radius);
+                move_two_steppers(r->left, r->right, steps, GPIO_PIN_RESET);
+                break;
+            }
+            case MOVE_BACKWARD:
+            {
+                uint32_t steps = distance_to_steps(m->value, r->wheel_radius);
+                move_two_steppers(r->left, r->right, steps, GPIO_PIN_SET);
+                break;
+            }
+            case MOVE_TURN_CW:
+                robot_rotate(r, m->value, 1);
+                break;
+            case MOVE_TURN_CCW:
+                robot_rotate(r, m->value, 0);
+                break;
+        }
+
+        while (r->left->steps_left > 0 || r->right->steps_left > 0)
+        {
+            sensor_control_loop(r->left);
+        }
+
+        HAL_Delay(500);
+    }
+}
