@@ -3,44 +3,40 @@
 ---
 
 ## 1. The Competition
-Eurobot is a yearly robotics contest held in France where student and hobbyist teams build autonomous robots that compete head-to-head on a shared table. Each match lasts just 100 seconds, and every movement the robot makes has to happen on its own — no remote control once the game starts. The 2026 theme is "Winter Is Coming," and the story goes like this: you're a squirrel racing against another squirrel to grab as many hazelnut crates as possible before winter arrives. It sounds silly, but the engineering behind it is serious stuff.
+Eurobot is an annual French robotics competition where student and hobbyist teams build autonomous robots that compete on a shared arena. Matches last 100 seconds with no remote control allowed—robots must operate independently. The 2026 theme, "Winter Is Coming," casts competitors as squirrels racing to collect hazelnut crates before winter. Though playful in concept, the engineering is rigorous.
 
-A team typically brings two things to the table: a main robot that handles the complex strategy, and one or more smaller robots called PAMIs (or SIMAs in English). The main robot does the heavy lifting — navigating, grabbing, sorting, placing. The PAMI has a simpler life. Its job is usually to go from point A to point B, maybe push something over, and call it a day. Simple, reliable, done.
+Teams deploy two robot types: a main robot that handles navigation, manipulation, and strategic placement, and one or more PAMIs (SIMAs), which perform simpler point to point tasks and basic actions like pushing objects. This division separates complex strategy from straightforward execution.
 
 ---
 
 ## 2. What Is a PAMI, Exactly?
-PAMI stands for "Petit Actionneur Mobile Indépendant" — basically, a small independent mobile actuator. The English equivalent is SIMA. The rules around it are straightforward but strict. Once you launch it, it's on its own. You can trigger it with a pull-cord at the start of the match or have your main robot nudge a button mid-game, but after that moment, no radio, no wires, no helping hands. It has to figure out the rest by itself.
 
-It also has to pass its own technical inspection, separate from the main robot. Same safety rules apply: emergency stop capability, can't ram the opponent, proper battery handling, all that good stuff. And it needs to work for either team color — you don't get to reprogram it between matches depending on which side you're assigned.
-
-Because of all this, a PAMI's code doesn't need to be fancy. It doesn't need pathfinding algorithms or computer vision or complex decision trees. What it absolutely does need is rock-solid trajectory execution — the ability to take a sequence of moves and turn them into precise wheel motions, repeatably, without drifting off course. That's the core problem PAMI1 solves.
+PAMI (Petit Actionneur Mobile Indépendant) is a small, autonomous mobile actuator. Once activated—either by pull cord at match start or by the main robot pressing a button—it operates entirely independently with no radio control, wiring, or external intervention. Like the main robot, it must pass its own technical inspection and comply with safety regulations, including emergency stop capability and battery management. Importantly, it must function identically regardless of team color, requiring no reprogramming between matches. Unlike more complex systems, PAMI requires no pathfinding algorithms, computer vision, or elaborate decision making. Instead, it demands precise, repeatable trajectory execution—converting movement sequences into accurate wheel motions without drift. This core capability is what PAMI1 addresses.
 
 ---
 
 ## 3. How PAMI1 Works
-PAMI1 is a two-wheeled differential-drive robot, meaning it moves by spinning its left and right wheels at different speeds or directions, similar to how a wheelchair turns. The wheels are driven by stepper motors, which are a specific type of motor that moves in discrete steps rather than spinning smoothly. This is actually really useful for a PAMI because it means you can count exactly how many steps you've taken and know precisely how far you've traveled — no need for wheel encoders or odometry corrections.
+PAMI1 is a differential drive robot that moves by spinning its wheels at different speeds, similar to a wheelchair turning. Stepper motors drive the wheels in discrete steps rather than continuous rotation, allowing precise distance measurement without wheel encoders or odometry corrections.
 
-The brain of the operation is an STM32 microcontroller, which is a popular choice in embedded systems. It handles all the timing-critical stuff through hardware timers: generating the step pulses for the motors, measuring the return signal from the ultrasonic sensor, and running the interrupt routines that keep everything synchronized.
+An STM32 microcontroller serves as the robot's control center, managing timing critical functions through hardware timers: generating motor step pulses, processing ultrasonic sensor signals, and executing interrupt routines to maintain system synchronization.
 
 ## 3.1. Motion and Acceleration
-When you tell a stepper motor to move, you can't just instantly blast it at full speed — the motor will skip steps and lose position. Instead, you accelerate gradually, cruise at your target speed, then decelerate to a stop. The code handles this with a trapezoidal speed profile. It calculates how many steps to spend accelerating, holds the target speed in the middle, then mirrors the acceleration phase for deceleration. All of this runs inside a timer interrupt, which fires at a high frequency and toggles the step pins at exactly the right moments.
+Stepper motors require gradual acceleration to avoid skipping steps and losing position. The solution is a trapezoidal speed profile: the motor accelerates to the target speed, maintains it, then decelerates symmetrically. A high frequency timer interrupt executes this sequence, toggling step pins at precise intervals.
 
 ## 3.2. From Distances to Steps
-The robot doesn't think in meters or degrees — it thinks in steps. So there's a simple conversion layer: given the wheel radius, you can calculate how many steps it takes to travel one meter (wheel circumference times steps per revolution). For turning, you use the wheel base — the distance between the two wheels — to figure out how far each wheel needs to travel to rotate the robot by a given angle. The wheels spin in opposite directions during a turn, and the math works out cleanly.
+The robot measures movement in steps rather than meters or degrees. A simple conversion layer translates between units: using the wheel radius, you calculate how many steps equal one meter of travel. For turning, the wheel base determines how far each wheel must travel to rotate the robot by a specific angle. During turns, the wheels spin in opposite directions, making the calculations straightforward.
 
 ## 3.3. Obstacle Detection
-There's a single ultrasonic sensor on the front that pings out a sound wave and measures how long it takes to bounce back. If something is closer than about 20 centimeters, the code sets a flag that tells the motor interrupt routine to freeze all motion until the path is clear again. It's not smart avoidance — the robot doesn't try to go around anything. It just stops and waits. For a PAMI, that's usually enough.
+A front mounted ultrasonic sensor detects obstacles by emitting sound waves and measuring their return time. When an object approaches within 20 centimeters, the sensor triggers a flag that halts all motor functions until the path clears. Rather than navigating around obstacles, the robot simply stops and waits a passive safety approach that suffices for a PAMI.
 
 ## 3.4. The Trajectory System
-This is the part that got refactored recently, and it's probably the most interesting piece of the codebase. Originally, the sequence of moves — go forward 40 centimeters, turn right 75 degrees, go forward 70 centimeters, and so on — was hardcoded directly in main as a long block of move calls and wait loops. It worked, but it was messy and adding a new path meant duplicating a bunch of code.
-
-The new system is data-driven. A single move is described by a type (forward, backward, turn clockwise, turn counter-clockwise) and a value (distance in meters or angle in degrees). A trajectory is just an array of these moves. There are four trajectory slots available, corresponding to the different target positions the PAMI might need to reach depending on the match setup. One function, robot_execute_trajectory, walks through whatever trajectory you hand it and drives the motors accordingly. Main now just picks an index and calls that function — clean and simple.
+This refactored section is the codebase's most interesting component. Originally, the movement sequence—forward 40 cm, right 75°, forward 70 cm, etc. was hardcoded in main as repetitive move calls and wait loops. While functional, this approach was unwieldy and required significant code duplication to implement new paths.
+The new system is data driven. A single move is described by a type (forward, backward, turn clockwise, turn counter clockwise) and a value (distance in meters or angle in degrees). A trajectory is just an array of these moves. There are four trajectory slots available, corresponding to the different target positions the PAMI might need to reach depending on the match setup. One function, robot_execute_trajectory, walks through whatever trajectory you hand it and drives the motors accordingly. Main now just picks an index and calls that function .
 
 ## 3.5. Where Things Stand Right Now
-Trajectory 0 is fully defined with real measured values: forward 40 centimeters, turn 75 degrees clockwise, forward 70 centimeters, turn 75 degrees counter-clockwise, forward 33 centimeters. This was pulled from the original working code, so it should produce the same behavior that was already tested on the table.
+Trajectory 0 is fully defined with measured values from the original working code: forward 40 cm, turn 75° clockwise, forward 70 cm, turn 75° counter clockwise, forward 33 cm. This ensures tested behavior.
 
-Trajectories 1 through 3 are still empty placeholders. The actual distances and angles for those paths need to be measured on the real table and filled in. The selection logic in main is also temporary — right now it just picks trajectory 0 or 1 based on a physical switch, but in a real match this would depend on which side of the table you're assigned and what your strategy calls for.
+Trajectories 1–3 remain empty placeholders requiring field measurements. The selection logic currently uses a physical switch to choose between trajectories 0 and 1, but will ultimately depend on table assignment and match strategy.
 
-After the trajectory finishes, the robot currently just runs a servo sweep in the infinite loop, which is a placeholder for whatever end-of-match action gets added later — maybe deploying a flag, triggering a mechanism, or just sitting still.
+After completing the trajectory, the robot executes an indefinite servo sweep as a placeholder for the final end-of-match action such as flag deployment, mechanism activation, or standby.
 
